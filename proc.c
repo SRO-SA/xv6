@@ -88,7 +88,9 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
-
+  //
+  p->syscallnum = 0;
+  //
   release(&ptable.lock);
 
   // Allocate kernel stack.
@@ -138,7 +140,6 @@ userinit(void)
   p->tf->eflags = FL_IF;
   p->tf->esp = PGSIZE;
   p->tf->eip = 0;  // beginning of initcode.S
-
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
@@ -213,7 +214,7 @@ fork(void)
   pid = np->pid;
 
   acquire(&ptable.lock);
-
+  
   np->state = RUNNABLE;
 
   release(&ptable.lock);
@@ -531,4 +532,15 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+int
+numthreads(void)
+{
+  struct proc *p;
+  int total_process = 0;
+  for(p=ptable.proc; p<&ptable.proc[NPROC]; p++){
+    if(p->state == RUNNABLE || p->state == RUNNING || p->state == SLEEPING) total_process++;
+  }
+  return total_process;
 }
