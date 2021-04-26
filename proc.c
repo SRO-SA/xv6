@@ -6,6 +6,7 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "rand.h"
 
 struct {
   struct spinlock lock;
@@ -90,6 +91,7 @@ found:
   p->pid = nextpid++;
   //
   p->syscallnum = 0;
+  p->ticketnum = 10;
   //
   release(&ptable.lock);
 
@@ -311,6 +313,19 @@ wait(void)
     sleep(curproc, &ptable.lock);  //DOC: wait-sleep
   }
 }
+int
+find_total()
+{
+  struct proc *p;
+  int sum_tickets = 0;
+  for(p=ptable.proc; p<&ptable.proc[NPROC]; p++){
+    if(p->state == RUNNABLE){
+      sum_tickets += p->ticketnum;
+    }
+  }
+  return sum_tickets;
+}
+
 
 //PAGEBREAK: 42
 // Per-CPU process scheduler.
@@ -326,17 +341,40 @@ scheduler(void)
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
-  
+  //
+  int count = 0;
+  int total_tickets = 0;
+  int winner = 0;
+  int lockscheduler = 1;
+  //  
   for(;;){
     // Enable interrupts on this processor.
     sti();
-
+    //
+    if(!lockscheduler) hlt();
+    lockscheduler = 0;
+    //
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
+    //
+    count = 0;
+    winner = 0;
+    total_tickets = 0;
+    
+    total_tickets = find_total();
+    
+    winner = find_winner(total_tickets);
+    //
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
-
+      //
+      if((count + p->ticketnum) < winner){
+        count += p->ticketnum;
+        continue;
+      }
+      lockscheduler = 1;
+      //
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
@@ -350,6 +388,8 @@ scheduler(void)
       // Process is done running for now.
       // It should have changed its p->state before coming back.
       c->proc = 0;
+      //
+      break;
     }
     release(&ptable.lock);
 

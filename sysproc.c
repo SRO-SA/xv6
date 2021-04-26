@@ -106,8 +106,18 @@ sys_info(void)
     case 2:
       return myproc()->syscallnum;   
     case 3:
-      return myproc()->sz;
+      return myproc()->sz/PGSIZE;
     default:
       return -1;
   }
+}
+
+int 
+sys_ticket(void)
+{
+  int tickets;
+  myproc()->syscallnum = myproc()->syscallnum+1;
+  if(argint(0, &tickets) < 0 ) return -1;
+  myproc()->ticketnum = tickets;
+  return myproc()->ticketnum;
 }
