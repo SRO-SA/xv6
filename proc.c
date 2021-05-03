@@ -15,6 +15,7 @@ struct {
 
 static struct proc *initproc;
 
+int maxstride = 1 << 10;
 int nextpid = 1;
 extern void forkret(void);
 extern void trapret(void);
@@ -92,6 +93,8 @@ found:
   //
   p->syscallnum = 0;
   p->ticketnum = 10;
+  p->stride = maxstride/p->ticketnum;
+  p->pass = p->stride;
   //
   release(&ptable.lock);
 
@@ -313,6 +316,21 @@ wait(void)
     sleep(curproc, &ptable.lock);  //DOC: wait-sleep
   }
 }
+unsigned int
+find_minimum()
+{
+  struct proc *p;
+  unsigned int minimum = 0xffffffff;
+  for(p=ptable.proc; p<&ptable.proc[NPROC]; p++){
+    if(p->state != RUNNABLE) continue;
+    if(p->pass < minimum){
+      minimum = p->pass;
+    }
+  }
+  //if (minimum == 0xffffffff ) panic("no minimum\n");
+  return minimum;
+}
+
 int
 find_total()
 {
@@ -326,7 +344,6 @@ find_total()
   return sum_tickets;
 }
 
-
 //PAGEBREAK: 42
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
@@ -338,61 +355,97 @@ find_total()
 void
 scheduler(void)
 {
-  struct proc *p;
-  struct cpu *c = mycpu();
-  c->proc = 0;
-  //
-  int count = 0;
-  int total_tickets = 0;
-  int winner = 0;
-  int lockscheduler = 1;
-  //  
-  for(;;){
-    // Enable interrupts on this processor.
-    sti();
+  int is_lottery = 1;
+  if(is_lottery==0){
+    struct proc* p = 0;
+
+    struct cpu *c = mycpu();
+    c->proc = 0;
     //
-    if(!lockscheduler) hlt();
-    lockscheduler = 0;
+    unsigned int minimum = 0;
+    int lockscheduler = 1;
     //
-    // Loop over process table looking for process to run.
-    acquire(&ptable.lock);
-    //
-    count = 0;
-    winner = 0;
-    total_tickets = 0;
-    
-    total_tickets = find_total();
-    
-    winner = find_winner(total_tickets);
-    //
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
-      //
-      if((count + p->ticketnum) < winner){
-        count += p->ticketnum;
-        continue;
-      }
+    for(;;){
+      sti();   
+      if(!lockscheduler) hlt();
       lockscheduler = 1;
-      //
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
+       
+      acquire(&ptable.lock);
+      minimum = find_minimum();    
+      for(p=ptable.proc; p<&ptable.proc[NPROC]; p++){
+        if(p->state != RUNNABLE) continue;
+        if(p->pass > minimum) continue;
+        //panic("found\n");
 
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
-      //
-      break;
+        lockscheduler = 1;
+        c->proc = p;
+        p->pass += p->stride;
+        switchuvm(p);
+        p->state=RUNNING;
+        swtch(&(c->scheduler), p->context);
+        switchkvm(); 
+        c->proc = 0; 
+        break;           
+      }
+      release(&ptable.lock);     
     }
-    release(&ptable.lock);
+  }
+  else{
+    struct proc *p;
+    struct cpu *c = mycpu();
+    c->proc = 0;
+    //
+    int count = 0;
+    int total_tickets = 0;
+    int winner = 0;
+    int lockscheduler = 1;
+    //  
+    for(;;){
+      // Enable interrupts on this processor.
+      sti();
+      //
+      if(!lockscheduler) hlt();
+      lockscheduler = 0;
+      //
+      // Loop over process table looking for process to run.
+      acquire(&ptable.lock);
+      //
+      count = 0;
+      winner = 0;
+      total_tickets = 0;
+    
+      total_tickets = find_total();
+    
+      winner = find_winner(total_tickets);
+      //
+      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+        if(p->state != RUNNABLE)
+          continue;
+        //
+        if((count + p->ticketnum) < winner){
+          count += p->ticketnum;
+          continue;
+        }
+        lockscheduler = 1;
+        //
+        // Switch to chosen process.  It is the process's job
+        // to release ptable.lock and then reacquire it
+        // before jumping back to us.
+        c->proc = p;
+        switchuvm(p);
+        p->state = RUNNING;
 
+        swtch(&(c->scheduler), p->context);
+        switchkvm();
+
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->proc = 0;
+        //
+        break;
+      }
+      release(&ptable.lock);
+    }
   }
 }
 

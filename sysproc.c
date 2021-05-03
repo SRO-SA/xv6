@@ -10,14 +10,12 @@
 int
 sys_fork(void)
 {
-  myproc()->syscallnum = myproc()->syscallnum+1;
   return fork();
 }
 
 int
 sys_exit(void)
 {
-  myproc()->syscallnum = myproc()->syscallnum+1;
   exit();
   return 0;  // not reached
 }
@@ -25,14 +23,12 @@ sys_exit(void)
 int
 sys_wait(void)
 {
-  myproc()->syscallnum = myproc()->syscallnum+1;
   return wait();
 }
 
 int
 sys_kill(void)
 { 
-  myproc()->syscallnum = myproc()->syscallnum+1;
   int pid;
   if(argint(0, &pid) < 0)
     return -1;
@@ -42,7 +38,6 @@ sys_kill(void)
 int
 sys_getpid(void)
 {
-  myproc()->syscallnum = myproc()->syscallnum+1;
   return myproc()->pid;
 }
 
@@ -51,7 +46,6 @@ sys_sbrk(void)
 {
   int addr;
   int n;
-  myproc()->syscallnum = myproc()->syscallnum+1;
   if(argint(0, &n) < 0)
     return -1;
   addr = myproc()->sz;
@@ -65,7 +59,6 @@ sys_sleep(void)
 {
   int n;
   uint ticks0;
-  myproc()->syscallnum = myproc()->syscallnum+1;
   if(argint(0, &n) < 0)
     return -1;
   acquire(&tickslock);
@@ -87,7 +80,6 @@ int
 sys_uptime(void)
 {
   uint xticks;
-  myproc()->syscallnum = myproc()->syscallnum+1;
   acquire(&tickslock);
   xticks = ticks;
   release(&tickslock);
@@ -98,7 +90,6 @@ int
 sys_info(void)
 {
   int what;
-  myproc()->syscallnum = myproc()->syscallnum+1;
   if(argint(0, &what) < 0) return -1;
   switch(what){
     case 1:
@@ -107,6 +98,8 @@ sys_info(void)
       return myproc()->syscallnum;   
     case 3:
       return myproc()->sz/PGSIZE;
+    case 4:
+      return ticks;
     default:
       return -1;
   }
@@ -116,8 +109,10 @@ int
 sys_ticket(void)
 {
   int tickets;
-  myproc()->syscallnum = myproc()->syscallnum+1;
   if(argint(0, &tickets) < 0 ) return -1;
+  myproc()->stride = myproc()->stride *myproc()->ticketnum;
   myproc()->ticketnum = tickets;
+  myproc()->stride = myproc()->stride/tickets;
+  myproc()->pass = myproc()->stride;
   return myproc()->ticketnum;
 }

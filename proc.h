@@ -52,6 +52,8 @@ struct proc {
   //
   int syscallnum;              // How many system call this process used
   int ticketnum;	       // How many tickets this process has
+  int stride;
+  int pass;
 };
 
 // Process memory is laid out contiguously, low addresses first:
