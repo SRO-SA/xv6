@@ -227,6 +227,63 @@ fork(void)
   return pid;
 }
 
+int 
+clone(void)
+{
+  uint ustack[2];
+  void(*func)(void*);
+  void * arg;
+  void *stack;
+  if(argptr(0, (void*)&stack, sizeof(stack)< 0)) return -1;
+  if(argptr(1, (void*)&func, sizeof(func)<0)) return -1;
+  if(argptr(2, (void*)&arg, sizeof(arg)<0)) return -1;
+
+  int i, pid;
+  struct proc *np;
+  struct proc *curproc = myproc();
+  
+  if((uint)stack%PGSIZE!=0){
+    return -1;
+  }
+  if((curproc->sz - (uint)stack)<PGSIZE) return -1;
+  
+  //Allocate process.
+  if((np= allocproc()) == 0) return -1;
+  
+  //Copy peocess state.
+  np->pgdir = curproc->pgdir;
+  np->sz = curproc->sz;
+  np->parent = curproc;
+  *np->tf = *curproc->tf;
+  np->tf->esp = (uint)stack+PGSIZE;
+  np->tstack = (uint)stack;
+  ustack[0] = 0xffffffff;
+  ustack[1] = (uint)arg;
+  np->tf->esp -= (2)*4;
+  copyout(np->pgdir, np->tf->esp, ustack, (2)*4);
+  //Clear %eax so that fork returns 0 in the child.
+  np->tf->eax = 0;
+  np->tf->eip = (uint)func;
+  np->tf->ebp = np->tf->esp;
+  
+  for(i=0; i<NOFILE; i++){
+    if(curproc->ofile[i])
+      np->ofile[i] = filedup(curproc->ofile[i]);
+  }
+  np->cwd = idup(curproc->cwd);
+  
+  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+
+  pid = np->pid;
+
+  acquire(&ptable.lock);
+  np->state = RUNNABLE;
+  release(&ptable.lock);
+ 
+  return pid;
+}
+
+
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait() to find out it exited.
@@ -272,6 +329,51 @@ exit(void)
   sched();
   panic("zombie exit");
 }
+
+int 
+join(void)
+{
+
+  struct proc* curproc = myproc();
+  void **stack;
+  if(argptr(0, (void*)&stack, sizeof(stack) < 0)) return -1;
+  if((curproc->sz-(uint)stack)< sizeof(void**)) return -1;
+
+  struct proc *p;
+  int havethreads, pid;
+
+  acquire(&ptable.lock);
+  for(; ; ){
+    havethreads = 0;
+    for(p = ptable.proc; p< &ptable.proc[NPROC]; p++){
+      if(p->pgdir != curproc->pgdir) continue;
+      if(p->parent != curproc) continue;
+      havethreads = 1;
+      if(p->state == ZOMBIE){
+        pid = p->pid;
+        p->state = UNUSED;
+        p->pid = 0;
+        p->parent = 0;
+        p->name[0] = 0;
+        p->killed = 0;
+        *((int*)((int*)stack))=p->tstack;
+        release(&ptable.lock);
+        return pid;
+        
+      }
+    }
+    //No point waiting if we don't have any threads.
+    if(!havethreads || curproc->killed){
+      release(&ptable.lock);
+      return -1;
+    }
+    //Wait for threads to exit.
+    sleep(curproc, &ptable.lock);
+    
+  } 
+  
+}
+
 
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
@@ -355,7 +457,7 @@ find_total()
 void
 scheduler(void)
 {
-  int is_lottery = 1;
+  int is_lottery = 0;
   if(is_lottery==0){
     struct proc* p = 0;
 

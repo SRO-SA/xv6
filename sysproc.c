@@ -116,3 +116,14 @@ sys_ticket(void)
   myproc()->pass = myproc()->stride;
   return myproc()->ticketnum;
 }
+
+int 
+sys_clone(void)
+{
+  return clone();
+}
+
+int
+sys_join(void){
+  return join();
+}
