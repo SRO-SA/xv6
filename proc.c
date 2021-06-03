@@ -257,7 +257,6 @@ clone(void)
   *np->tf = *curproc->tf;
   np->tf->esp = (uint)stack+PGSIZE;
   np->tstack = (uint)stack;
-  ustack[0] = 0xffffffff;
   ustack[1] = (uint)arg;
   np->tf->esp -= (2)*4;
   copyout(np->pgdir, np->tf->esp, ustack, (2)*4);
