@@ -295,6 +295,12 @@ exit(void)
 
   if(curproc == initproc)
     panic("init exiting");
+  
+  for(p = ptable.proc; p<&ptable.proc[NPROC]; p++){
+    if(p->pgdir != curproc->pgdir) continue;
+    if(p->parent != curproc) continue;
+    sleep(curproc, &ptable.lock);
+  }
 
   // Close all open files.
   for(fd = 0; fd < NOFILE; fd++){
